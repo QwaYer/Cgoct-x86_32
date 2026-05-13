@@ -38,6 +38,7 @@
 | **[CactLib-x86_32](https://github.com/QwaYer/CactLib-x86_32)** | **`libc.so`** + **`pic/start.o`** — required before linking **`cgoct`**. |
 | **[Cactsole-x86_32](https://github.com/QwaYer/Cactsole-x86_32)** | Builds **`cactsole`**; **cactsole-rescue** is a second staged copy with a different argv (see LocalRepoCactOS Makefile). |
 | **[LocalRepoCactOS](../LocalRepoCactOS)** | Packs **`cctkfs.img`**: copies **`cgoct`** → **`lib/bin/init`** and **`lib/bin/cgoct`**, plus **`cactsole`** binaries and **`libc.so`**. |
+| **[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** | **Integrator** — orchestrates **CactLib** → **cgoct** → **LocalRepo** → **kernel** → **CactBridge** |
 
 **Why a supervisor:** the kernel only launches **`init` once**. **cgoct** keeps the interactive shell (or rescue shell) alive under configurable restart policies and dampens crash-storms with cooldowns and optional rescue handoff.
 
@@ -45,22 +46,24 @@
 
 ## 🔨 Building
 
-**Prerequisites** (same multilib story as the rest of the Cact userspace tree):
+**Recommended — full workspace**
+
+**[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** builds **CactLib**, then **`cgoct`**, then packs **LocalRepo** — use **`make`** from the workspace parent.
+
+**Standalone — this repository**
 
 | Tool | Notes |
 |------|-------|
 | `gcc -m32` | Multilib **`gcc-multilib`** on amd64 hosts |
-| `ld -m elf_i386` | GNU binutils, **`-pie --no-dynamic-linker`** |
-| **`../CactLib-x86_32`** | Must build **`libc.so`** and **`build/pic/start.o`** first (the Makefile invokes this automatically) |
-
-**Targets**
+| `ld -m elf_i386` | **`-pie --no-dynamic-linker`** |
+| **`CACTLIB`** | Path to **CactLib-x86_32** — **`libc.so`** and **`build/pic/start.o`** must exist |
 
 ```sh
-make -j"$(nproc)"   # produce ./cgoct
-make clean          # remove objects and the binary
+make CACTLIB=/abs/path/to/CactLib-x86_32 -j"$(nproc)"   # ./cgoct
+make clean
 ```
 
-**Successful link** yields a single **`cgoct`** ELF next to this README; stage it with **`LocalRepoCactOS`** so the kernel sees it as **`/bin/init`**.
+Stage **`cgoct`** as **`/bin/init`** via **LocalRepoCactOS** (paths passed by **CactOS** or manually — see that repo’s **`Makefile`**).
 
 ---
 
