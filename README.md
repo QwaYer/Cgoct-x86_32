@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/license-GPLv3-blue.svg?style=for-the-badge" alt="License: GPLv3">
   <img src="https://img.shields.io/badge/arch-i686-red.svg?style=for-the-badge" alt="Arch: i686">
   <img src="https://img.shields.io/badge/language-C-orange.svg?style=for-the-badge" alt="Language: C">
-  <img src="https://img.shields.io/badge/link-PIE%20%2B%20libc.so-purple.svg?style=for-the-badge" alt="PIE + libc.so">
+  <img src="https://img.shields.io/badge/link-PIE%20%2B%20clibc.so-purple.svg?style=for-the-badge" alt="PIE + clibc.so">
   <img src="https://img.shields.io/badge/role-%2Fbin%2Finit-0369a1.svg?style=for-the-badge" alt="Role: /bin/init">
   <img src="https://img.shields.io/badge/output-cgoct-green.svg?style=for-the-badge" alt="cgoct">
 </p>
@@ -23,7 +23,7 @@
 | **Main binary** | `cgoct` (also staged as **`/bin/init`** in [`LocalRepoCactOS`](../LocalRepoCactOS)) |
 | **Child programs** | `/bin/cactsole` (default), `/bin/cactsole-rescue --safe-mode` (rescue path) |
 | **Load address** | PIE **ET_DYN** at **`0x08000000`** — same layout family as **cactsole** ([`link.ld`](link.ld)) |
-| **libc** | Dynamic **`libc.so`** from **[CactLib-x86_32](https://github.com/QwaYer/CactLib-x86_32)** at **`0x10000000`** (see CactLib linker notes) |
+| **libc** | Dynamic **`clibc.so`** from **[CactLib-x86_32](https://github.com/QwaYer/CactLib-x86_32)** at **`0x10000000`** (see CactLib linker notes) |
 | **Fast-crash window** | Child exit **≤ 3 s** with **non-zero** status counts toward burst detection |
 | **Restart backoff** | On **fork/exec** failure: exponential delay **1 … 10 s** |
 | **Config buffer** | **512** bytes max read from `/etc/cgoct.conf` |
@@ -35,9 +35,9 @@
 | Component | Role |
 |-----------|------|
 | **[CactKernel-x86_32](https://github.com/QwaYer/CactKernel-x86_32)** | Boots **`bin/init`** from **binfs** (ext4 + **cctkfs** overlay). That ELF is this supervisor. |
-| **[CactLib-x86_32](https://github.com/QwaYer/CactLib-x86_32)** | **`libc.so`** + **`pic/start.o`** — required before linking **`cgoct`**. |
+| **[CactLib-x86_32](https://github.com/QwaYer/CactLib-x86_32)** | **`clibc.so`** + **`pic/start.o`** — required before linking **`cgoct`**. |
 | **[Cactsole-x86_32](https://github.com/QwaYer/Cactsole-x86_32)** | Builds **`cactsole`**; **cactsole-rescue** is a second staged copy with a different argv (see LocalRepoCactOS Makefile). |
-| **[LocalRepoCactOS](../LocalRepoCactOS)** | Packs **`cctkfs.img`**: copies **`cgoct`** → **`lib/bin/init`** and **`lib/bin/cgoct`**, plus **`cactsole`** binaries and **`libc.so`**. |
+| **[LocalRepoCactOS](../LocalRepoCactOS)** | Packs **`cctkfs.img`**: copies **`cgoct`** → **`lib/bin/init`** and **`lib/bin/cgoct`**, plus **`cactsole`** binaries and **`clibc.so`**. |
 | **[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** | **Integrator** — orchestrates **CactLib** → **cgoct** → **LocalRepo** → **kernel** → **CactBridge** |
 
 **Why a supervisor:** the kernel only launches **`init` once**. **cgoct** keeps the interactive shell (or rescue shell) alive under configurable restart policies and dampens crash-storms with cooldowns and optional rescue handoff.
@@ -56,7 +56,7 @@
 |------|-------|
 | `gcc -m32` | Multilib **`gcc-multilib`** on amd64 hosts |
 | `ld -m elf_i386` | **`-pie --no-dynamic-linker`** |
-| **`CACTLIB`** | Path to **CactLib-x86_32** — **`libc.so`** and **`build/pic/start.o`** must exist |
+| **`CACTLIB`** | Path to **CactLib-x86_32** — **`clibc.so`** and **`build/pic/start.o`** must exist |
 
 ```sh
 make CACTLIB=/abs/path/to/CactLib-x86_32 -j"$(nproc)"   # ./cgoct
@@ -71,7 +71,7 @@ Stage **`cgoct`** as **`/bin/init`** via **LocalRepoCactOS** (paths passed by **
 
 ```
 Cgoct-x86_32/
-├── Makefile          # gcc -m32, links start.o + main.o + libc.so
+├── Makefile          # gcc -m32, links start.o + main.o + clibc.so
 ├── link.ld           # PIE layout @ 0x08000000 (matches cactsole family)
 ├── LICENSE           # GPLv3
 ├── src/

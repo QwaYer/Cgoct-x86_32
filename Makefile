@@ -1,6 +1,6 @@
 _ACTIVE := $(filter-out clean,$(or $(MAKECMDGOALS),all))
 
-CACTLIB ?= $(abspath ../CactLib-x86_32)
+CACTLIB ?= $(abspath ../CactLibc-x86_32)
 
 ifneq ($(_ACTIVE),)
 ifndef CACTLIB
@@ -13,11 +13,11 @@ LD      = ld
 
 CFLAGS  = -m32 -ffreestanding -fPIE -fno-stack-protector -nostdlib \
           -I$(CACTLIB)/include -Wall -Wextra
-LDFLAGS = -m elf_i386 -pie --no-dynamic-linker --hash-style=both \
+LDFLAGS = -m elf_i386 -pie --dynamic-linker=/lib/ld.so --hash-style=both \
           -nostdlib -T link.ld
 
 START_O  = $(CACTLIB)/build/pic/start.o
-LIBC_SO  = $(CACTLIB)/libc.so
+LIBC_SO  = $(CACTLIB)/clibc.so
 
 SRCS = src/main.c
 OBJS = $(SRCS:.c=.o)
