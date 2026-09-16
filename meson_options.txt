@@ -1,0 +1,2 @@
+option('cactlib', type: 'string', value: '../CactLibc-x86_32',
+  description: 'CactLibc project root, relative to this repo or absolute')

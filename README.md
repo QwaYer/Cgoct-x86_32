@@ -35,10 +35,10 @@
 | Component | Role |
 |-----------|------|
 | **[CactKernel-x86_32](https://github.com/QwaYer/CactKernel-x86_32)** | Boots **`bin/init`** from **binfs** (ext4 + **cctkfs** overlay). That ELF is this supervisor. |
-| **[CactLib-x86_32](https://github.com/QwaYer/CactLib-x86_32)** | **`clibc.so`** + **`pic/start.o`** — required before linking **`cgoct`**. |
-| **[Cactsole-x86_32](https://github.com/QwaYer/Cactsole-x86_32)** | Builds **`cactsole`**; **cactsole-rescue** is a second staged copy with a different argv (see LocalRepoCactOS Makefile). |
-| **[LocalRepoCactOS](../LocalRepoCactOS)** | Packs **`cctkfs.img`**: copies **`cgoct`** → **`lib/bin/init`** and **`lib/bin/cgoct`**, plus **`cactsole`** binaries and **`clibc.so`**. |
-| **[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** | **Integrator** — orchestrates **CactLib** → **cgoct** → **LocalRepo** → **kernel** → **CactBridge** |
+| **[CactLibc-x86_32](https://github.com/QwaYer/CactLibc-x86_32)** | **`clibc.so`** + **`start.o`** (under `build-meson/`) — required before linking **`cgoct`**. |
+| **[Cactsole-x86_32](https://github.com/QwaYer/Cactsole-x86_32)** | Builds **`cactsole`**; **cactsole-rescue** is a second staged copy with a different argv (see the LocalRepoCactOS build). |
+| **[LocalRepoCactOS-x86_32](../LocalRepoCactOS-x86_32)** | Packs **`cctkfs.img`**: copies **`cgoct`** → **`lib/bin/init`** and **`lib/bin/cgoct`**, plus **`cactsole`** binaries and **`clibc.so`**. |
+| **[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** | **Integrator** — orchestrates **CactLibc** → **cgoct** → **LocalRepo** → **kernel** → **CactBridge** |
 
 **Why a supervisor:** the kernel only launches **`init` once**. **cgoct** keeps the interactive shell (or rescue shell) alive under configurable restart policies and dampens crash-storms with cooldowns and optional rescue handoff.
 
@@ -48,22 +48,23 @@
 
 **Recommended — full workspace**
 
-**[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** builds **CactLib**, then **`cgoct`**, then packs **LocalRepo** — use **`make`** from the workspace parent.
+**[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** builds **CactLibc**, then **`cgoct`**, then packs **LocalRepo** — use **`ninja -C CactOS-x86_32/build-meson stage`** from the workspace parent.
 
 **Standalone — this repository**
 
 | Tool | Notes |
 |------|-------|
-| `gcc -m32` | Multilib **`gcc-multilib`** on amd64 hosts |
-| `ld -m elf_i386` | **`-pie --no-dynamic-linker`** |
-| **`CACTLIB`** | Path to **CactLib-x86_32** — **`clibc.so`** and **`build/pic/start.o`** must exist |
+| `clang -m32` | freestanding; no 32-bit libc needed |
+| `ld -m elf_i386` | **`-pie --dynamic-linker=/lib/ld.so`** |
+| **`cactlib` option** | Path to **CactLibc-x86_32** — **`build-meson/clibc.so`** and **`build-meson/start.o`** must exist |
 
 ```sh
-make CACTLIB=/abs/path/to/CactLib-x86_32 -j"$(nproc)"   # ./cgoct
-make clean
+meson setup build-meson --cross-file cross/i686-cact-clang.ini
+ninja -C build-meson   # build-meson/cgoct
+ninja -C build-meson clean
 ```
 
-Stage **`cgoct`** as **`/bin/init`** via **LocalRepoCactOS** (paths passed by **CactOS** or manually — see that repo’s **`Makefile`**).
+Stage **`cgoct`** as **`/bin/init`** via **LocalRepoCactOS** (paths passed by **CactOS** or manually — see that repo’s **`meson.build`**).
 
 ---
 
@@ -71,7 +72,7 @@ Stage **`cgoct`** as **`/bin/init`** via **LocalRepoCactOS** (paths passed by **
 
 ```
 Cgoct-x86_32/
-├── Makefile          # gcc -m32, links start.o + main.o + clibc.so
+├── meson.build       # clang -m32, links start.o + main.o + clibc.so
 ├── link.ld           # PIE layout @ 0x08000000 (matches cactsole family)
 ├── LICENSE           # GPLv3
 ├── src/
