@@ -20,10 +20,10 @@
 
 | | |
 |---|---|
-| **Main binary** | `cgoct` (also staged as **`/bin/init`** in [`LocalRepoCactOS`](../LocalRepoCactOS)) |
+| **Main binary** | `cgoct` (also staged as **`/bin/init`** in [`LocalRepoCactOS-x86_32`](../LocalRepoCactOS-x86_32)) |
 | **Child programs** | `/bin/cactsole` (default), `/bin/cactsole-rescue --safe-mode` (rescue path) |
 | **Load address** | PIE **ET_DYN** at **`0x08000000`** — same layout family as **cactsole** ([`link.ld`](link.ld)) |
-| **libc** | Dynamic **`clibc.so`** from **[CactLib-x86_32](https://github.com/QwaYer/CactLib-x86_32)** at **`0x10000000`** (see CactLib linker notes) |
+| **libc** | Dynamic **`clibc.so`** from **[CactLib-x86_32](https://github.com/QwaYer/CactLibc-x86_32)** at **`0x10000000`** (see CactLib linker notes) |
 | **Fast-crash window** | Child exit **≤ 3 s** with **non-zero** status counts toward burst detection |
 | **Restart backoff** | On **fork/exec** failure: exponential delay **1 … 10 s** |
 | **Config buffer** | **512** bytes max read from `/etc/cgoct.conf` |
@@ -112,7 +112,7 @@ cooldown_sec=8
 |-------|-----------|
 | **Startup** | `prepare_files()` → `load_config()` → log file → **`/dev/tty`** on fds **0–2** |
 | **Spawn** | `fork` + `execve` of **cactsole** or **cactsole-rescue** with **`PATH=/bin:/sbin`**, **`HOME=/`** |
-| **Wait** | `waitpid`; on this kernel, **status is the raw exit code** (not POSIX-packed wait status bits) |
+| **Wait** | `waitpid`; the wait status is **POSIX-packed** — the child's exit code is in bits **8–15** (`(status >> 8) & 0xff`) |
 | **Clean exit** (`0`) | Resets fast-crash counter; with **`on-failure`**, supervisor **exits** |
 | **Crash-loop** | If the child dies quickly **too many times**, sleep **`cooldown_sec`**, then prefer **rescue** on the next iteration when enabled |
 | **Spawn failure** | Backoff up to **10 s**, set flag to try **rescue** next time |
