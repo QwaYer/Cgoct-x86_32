@@ -440,7 +440,7 @@ int main(void) {
             int  matched_shell = (shell_pid > 0 && done == shell_pid);
 
             if (matched_shell) {
-                int exit_code = status;
+                int exit_code = (status >> 8) & 0xff;
                 shell_pid = 0;
 
                 if (status_is_success(status)) {
