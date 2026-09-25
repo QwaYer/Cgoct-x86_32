@@ -22,7 +22,7 @@ static const char default_config[] =
     "# crash_limit    : 1..20   (fast-crash bursts before cooldown)\n"
     "# cooldown_sec   : 1..120  (pause after crash-loop)\n"
     "# services       : opt-in — daemons from /sbin to start before shell.\n"
-    "#                  По умолчанию пусто; список выберет пользователь (утилита).\n"
+    "#                  Empty by default; the user (a utility) chooses the list.\n"
     "restart_policy=always\n"
     "rescue_shell=1\n"
     "crash_limit=4\n"
@@ -57,7 +57,7 @@ struct supervisor_cfg {
     int cooldown_sec;
 };
 
-/* ── Отслеживаемые фоновые демоны (/sbin/<name>) ─────────────────────── */
+/* ── Tracked background daemons (/sbin/<name>) ───────────────────────── */
 
 #define SVC_MAX     12
 #define SVC_NAME_SZ 32
@@ -66,16 +66,16 @@ struct supervisor_cfg {
 struct svc {
     char  name[SVC_NAME_SZ];
     char  path[SVC_PATH_SZ];
-    pid_t pid;          /* 0 = не запущен */
-    long  next_start_ms;/* монотонное время, когда можно поднимать снова */
-    long  started_ms;   /* монотонное время старта последнего инстанса */
-    unsigned burst;     /* подряд быстрых падений */
+    pid_t pid;          /* 0 = not running */
+    long  next_start_ms;/* monotonic time when it may be started again */
+    long  started_ms;   /* monotonic start time of the last instance */
+    unsigned burst;     /* consecutive fast crashes */
 };
 
 static struct svc services[SVC_MAX];
 static int services_n = 0;
 
-/* ── Монотонное время ────────────────────────────────────────────────── */
+/* ── Monotonic time ──────────────────────────────────────────────────── */
 
 static long now_ms(void) {
     struct timespec ts;
@@ -85,7 +85,7 @@ static long now_ms(void) {
     return 0;
 }
 
-/* ── Утилиты ─────────────────────────────────────────────────────────── */
+/* ── Utilities ───────────────────────────────────────────────────────── */
 
 static int file_exists(const char *path) {
     struct stat st;
@@ -159,10 +159,10 @@ static void cfg_defaults(struct supervisor_cfg *cfg) {
     cfg->cooldown_sec = COOLDOWN_SEC;
 }
 
-/* ── Список демонов по умолчанию ─────────────────────────────────────── */
+/* ── Default daemon list ─────────────────────────────────────────────── */
 
-/* Список по умолчанию закомментирован: демоны включаются только ключом
- * services в /etc/cgoct.conf — выбор делает пользователь (отдельная утилита). */
+/* The default list is commented out: daemons are only enabled by the
+ * services key in /etc/cgoct.conf — the user makes the choice (a separate utility). */
 #if 0
 static const char *default_service_names[] = {
     "logd", "devd", "netd", "powerd", "quirkd",
@@ -176,14 +176,14 @@ static void add_service_name(const char *name) {
 
     int i;
     for (i = 0; i < services_n; i++) {
-        if (strcmp(services[i].name, name) == 0) return; /* уже есть */
+        if (strcmp(services[i].name, name) == 0) return; /* already present */
     }
 
     struct svc *s = &services[services_n];
     memset(s, 0, sizeof(*s));
 
     if (name[0] == '/') {
-        /* Полный путь. */
+        /* Full path. */
         strncpy(s->path, name, SVC_PATH_SZ - 1);
         const char *slash = strrchr(name, '/');
         const char *base = slash ? slash + 1 : name;
@@ -207,7 +207,7 @@ static void services_defaults(void) {
 #endif
 }
 
-/* Добавить имена из строки-значения (разделители: пробел/запятая/таб). */
+/* Add names from a value string (separators: space/comma/tab). */
 static void parse_service_names(const char *val) {
     char buf[CONFIG_BUF_SIZE];
     strncpy(buf, val, sizeof(buf) - 1);
@@ -221,7 +221,7 @@ static void parse_service_names(const char *val) {
     }
 }
 
-/* ── Конфиг ──────────────────────────────────────────────────────────── */
+/* ── Config ──────────────────────────────────────────────────────────── */
 
 static void parse_config_line(struct supervisor_cfg *cfg, char *line) {
     int i = 0;
@@ -254,7 +254,7 @@ static void parse_config_line(struct supervisor_cfg *cfg, char *line) {
         int n = atoi(value);
         if (n >= 1 && n <= 120) cfg->cooldown_sec = n;
     } else if (strcmp(key, "services") == 0) {
-        /* Полная замена списка по умолчанию. */
+        /* Full replacement of the default list. */
         services_n = 0;
         parse_service_names(value);
     }
@@ -293,7 +293,7 @@ static void load_config(struct supervisor_cfg *cfg) {
     }
 }
 
-/* ── Запуск процессов ────────────────────────────────────────────────── */
+/* ── Spawning processes ──────────────────────────────────────────────── */
 
 static pid_t spawn_process(const char *path, char *argv[]) {
     pid_t pid = fork();
@@ -308,8 +308,8 @@ static pid_t spawn_process(const char *path, char *argv[]) {
     return pid;
 }
 
-/* Ожидание до deadline (или до idle_ms), но короткими порциями, чтобы
- * оперативно реагировать на падения детей. */
+/* Wait until deadline (or until idle_ms), but in short slices so that
+ * child crashes are noticed promptly. */
 static void sleep_slices(long ms) {
     if (ms <= 0) return;
     if (ms > IDLE_MS) ms = IDLE_MS;
@@ -325,7 +325,7 @@ int main(void) {
     struct supervisor_cfg cfg;
     long now = now_ms();
 
-    /* Состояние шелла. */
+    /* Shell state. */
     pid_t shell_pid = 0;
     long  shell_started_ms = 0;
     long  shell_next_start = 0;
@@ -361,7 +361,7 @@ int main(void) {
         /* Re-bind stdio to tty every supervisor loop iteration. */
         setup_console();
 
-        /* ── 1. Поднять всех демонов, чей срок подошёл ── */
+        /* ── 1. Start every daemon whose time has come ── */
         {
             int i;
             for (i = 0; i < services_n; i++) {
@@ -371,7 +371,7 @@ int main(void) {
                 if (s->pid > 0) continue;
                 if (now < s->next_start_ms) continue;
                 if (!file_exists(s->path)) {
-                    /* Бинарь не установлен — молча пропускаем, не спамя. */
+                    /* Binary not installed — skip silently, without spamming. */
                     s->next_start_ms = now + 30000;
                     continue;
                 }
@@ -391,7 +391,7 @@ int main(void) {
             }
         }
 
-        /* ── 2. Поднять шелл, если пора ── */
+        /* ── 2. Start the shell if it is time ── */
         if (shell_pid <= 0 && now >= shell_next_start) {
             const char *spawn_path = CACTSOLE_PATH;
             char **spawn_argv = cactsole_argv;
@@ -430,7 +430,7 @@ int main(void) {
             }
         }
 
-        /* ── 3. Забрать завершившихся детей (shell и демоны) ── */
+        /* ── 3. Reap exited children (shell and daemons) ── */
         for (;;) {
             int status = 0;
             pid_t done = waitpid(-1, &status, WNOHANG);
@@ -486,7 +486,7 @@ int main(void) {
                     if (restart_delay < RESTART_DELAY_MAX_SEC) restart_delay++;
                 }
             } else {
-                /* Завершился демон. */
+                /* A daemon exited. */
                 int i;
                 for (i = 0; i < services_n; i++) {
                     struct svc *s = &services[i];
@@ -521,7 +521,7 @@ int main(void) {
             }
         }
 
-        /* ── 4. Подсчитать, сколько можно поспать ── */
+        /* ── 4. Compute how long we may sleep ── */
         now = now_ms();
         {
             long deadline = 0;
@@ -541,7 +541,7 @@ int main(void) {
     }
 
 supervisor_exit:
-    /* Политика "once"/"on-failure": погасить демонов и завершиться. */
+    /* Policy "once"/"on-failure": shut the daemons down and exit. */
     {
         int i;
         for (i = 0; i < services_n; i++) {

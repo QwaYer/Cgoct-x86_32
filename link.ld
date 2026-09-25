@@ -1,6 +1,6 @@
 /*
- * Линкер-скрипт для cgoct — PIE (ET_DYN), VA 0x08000000.
- * Совпадает по структуре с cactsole/link.ld. clibc.so на 0x10000000.
+ * Linker script for cgoct — PIE (ET_DYN), VA 0x08000000.
+ * Structurally identical to cactsole/link.ld. clibc.so at 0x10000000.
  */
 
 ENTRY(_start)
