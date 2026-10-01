@@ -7,9 +7,9 @@
 #include <stat.h>
 #include <signal.h>
 
-#define CACTSOLE_PATH "/bin/cactsole"
-#define RESCUE_PATH   "/bin/cactsole-rescue"
-#define DAEMON_DIR    "/sbin"
+#define CACTSOLE_PATH "/usr/bin/cactsole"
+#define RESCUE_PATH   "/usr/bin/cactsole-rescue"
+#define DAEMON_DIR    "/usr/sbin"
 #define CONFIG_PATH   "/etc/cgoct.conf"
 #define LOG_PATH      "/var/log/cgoct.log"
 #define TTY_PATH      "/dev/tty"
@@ -18,10 +18,10 @@
 static const char default_config[] =
     "# cgoct supervisor config — auto-generated on first boot.\n"
     "# restart_policy : always | on-failure | once\n"
-    "# rescue_shell   : 0 | 1   (try /bin/cactsole-rescue on crash-loop)\n"
+    "# rescue_shell   : 0 | 1   (try /usr/bin/cactsole-rescue on crash-loop)\n"
     "# crash_limit    : 1..20   (fast-crash bursts before cooldown)\n"
     "# cooldown_sec   : 1..120  (pause after crash-loop)\n"
-    "# services       : opt-in — daemons from /sbin to start before shell.\n"
+    "# services       : opt-in — daemons from /usr/sbin to start before shell.\n"
     "#                  Empty by default; the user (a utility) chooses the list.\n"
     "restart_policy=always\n"
     "rescue_shell=1\n"
@@ -31,7 +31,7 @@ static const char default_config[] =
 
 static char *cactsole_argv[] = { "cactsole", NULL };
 static char *rescue_argv[]   = { "cactsole-rescue", "--safe-mode", NULL };
-static char *cactsole_envp[] = { "PATH=/bin:/sbin", "HOME=/", NULL };
+static char *cactsole_envp[] = { "PATH=/usr/bin:/usr/sbin", "HOME=/", NULL };
 static int log_fd = -1;
 
 /* Supervisor tuning to avoid fast crash loops. */

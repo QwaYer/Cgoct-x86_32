@@ -5,13 +5,13 @@
   <img src="https://img.shields.io/badge/arch-i686-red.svg?style=for-the-badge" alt="Arch: i686">
   <img src="https://img.shields.io/badge/language-C-orange.svg?style=for-the-badge" alt="Language: C">
   <img src="https://img.shields.io/badge/link-PIE%20%2B%20clibc.so-purple.svg?style=for-the-badge" alt="PIE + clibc.so">
-  <img src="https://img.shields.io/badge/role-%2Fbin%2Finit-0369a1.svg?style=for-the-badge" alt="Role: /bin/init">
+  <img src="https://img.shields.io/badge/role-%2Fusr%2Fbin%2Finit-0369a1.svg?style=for-the-badge" alt="Role: /usr/bin/init">
   <img src="https://img.shields.io/badge/output-cgoct-green.svg?style=for-the-badge" alt="cgoct">
 </p>
 
 <p align="center">
-  A tiny <strong>ring-3 supervisor</strong> shipped as the first userspace program (<strong><code>/bin/init</code></strong> via <strong>cctkfs</strong>).<br>
-  It opens <strong><code>/dev/tty</code></strong>, supervises <strong><code>/bin/cactsole</code></strong>, optional <strong><code>/bin/cactsole-rescue</code></strong> on crash-loops, and writes <strong><code>/etc/cgoct.conf</code></strong> / <strong><code>/var/log/cgoct.log</code></strong> when those paths exist.
+  A tiny <strong>ring-3 supervisor</strong> shipped as the first userspace program (<strong><code>/usr/bin/init</code></strong> via <strong>cctkfs</strong>).<br>
+  It opens <strong><code>/dev/tty</code></strong>, supervises <strong><code>/usr/bin/cactsole</code></strong>, optional <strong><code>/usr/bin/cactsole-rescue</code></strong> on crash-loops, and writes <strong><code>/etc/cgoct.conf</code></strong> / <strong><code>/var/log/cgoct.log</code></strong> when those paths exist.
 </p>
 
 ---
@@ -20,8 +20,8 @@
 
 | | |
 |---|---|
-| **Main binary** | `cgoct` (also staged as **`/bin/init`** in [`LocalRepoCactOS-x86_32`](../LocalRepoCactOS-x86_32)) |
-| **Child programs** | `/bin/cactsole` (default), `/bin/cactsole-rescue --safe-mode` (rescue path) |
+| **Main binary** | `cgoct` (also staged as **`/usr/bin/init`** in [`LocalRepoCactOS-x86_32`](../LocalRepoCactOS-x86_32)) |
+| **Child programs** | `/usr/bin/cactsole` (default), `/usr/bin/cactsole-rescue --safe-mode` (rescue path) |
 | **Load address** | PIE **ET_DYN** at **`0x08000000`** — same layout family as **cactsole** ([`link.ld`](link.ld)) |
 | **libc** | Dynamic **`clibc.so`** from **[CactLib-x86_32](https://github.com/QwaYer/CactLibc-x86_32)** at **`0x10000000`** (see CactLib linker notes) |
 | **Fast-crash window** | Child exit **≤ 3 s** with **non-zero** status counts toward burst detection |
@@ -34,10 +34,10 @@
 
 | Component | Role |
 |-----------|------|
-| **[CactKernel-x86_32](https://github.com/QwaYer/CactKernel-x86_32)** | Boots **`bin/init`** from **binfs** (ext4 + **cctkfs** overlay). That ELF is this supervisor. |
+| **[CactKernel-x86_32](https://github.com/QwaYer/CactKernel-x86_32)** | Boots **`usr/bin/init`** from **binfs** (ext4 + **cctkfs** overlay). That ELF is this supervisor. |
 | **[CactLibc-x86_32](https://github.com/QwaYer/CactLibc-x86_32)** | **`clibc.so`** + **`start.o`** (under `build-meson/`) — required before linking **`cgoct`**. |
 | **[Cactsole-x86_32](https://github.com/QwaYer/Cactsole-x86_32)** | Builds **`cactsole`**; **cactsole-rescue** is a second staged copy with a different argv (see the LocalRepoCactOS build). |
-| **[LocalRepoCactOS-x86_32](../LocalRepoCactOS-x86_32)** | Packs **`cctkfs.img`**: copies **`cgoct`** → **`lib/bin/init`** and **`lib/bin/cgoct`**, plus **`cactsole`** binaries and **`clibc.so`**. |
+| **[LocalRepoCactOS-x86_32](../LocalRepoCactOS-x86_32)** | Packs **`cctkfs.img`**: copies **`cgoct`** → **`lib/bin/init`** and **`lib/bin/cgoct`** (packed as **`/usr/bin/…`**), plus **`cactsole`** binaries and **`clibc.so`**. |
 | **[CactOS-x86_32](https://github.com/QwaYer/CactOS-x86_32)** | **Integrator** — orchestrates **CactLibc** → **cgoct** → **LocalRepo** → **kernel** → **CactBridge** |
 
 **Why a supervisor:** the kernel only launches **`init` once**. **cgoct** keeps the interactive shell (or rescue shell) alive under configurable restart policies and dampens crash-storms with cooldowns and optional rescue handoff.
@@ -64,7 +64,7 @@ ninja -C build-meson   # build-meson/cgoct
 ninja -C build-meson clean
 ```
 
-Stage **`cgoct`** as **`/bin/init`** via **LocalRepoCactOS** (paths passed by **CactOS** or manually — see that repo’s **`meson.build`**).
+Stage **`cgoct`** as **`/usr/bin/init`** via **LocalRepoCactOS** (paths passed by **CactOS** or manually — see that repo’s **`meson.build`**).
 
 ---
 
@@ -89,7 +89,7 @@ On first boot, if **`/etc/cgoct.conf`** is missing and the path is writable, **c
 | Key | Values | Meaning |
 |-----|--------|---------|
 | **`restart_policy`** | `always` · `on-failure` · `once` | When to stop respawning the child |
-| **`rescue_shell`** | `0` · `1` | After a crash-loop cooldown, try **`/bin/cactsole-rescue`** if present |
+| **`rescue_shell`** | `0` · `1` | After a crash-loop cooldown, try **`/usr/bin/cactsole-rescue`** if present |
 | **`crash_limit`** | `1` … `20` | Fast crashes within the window before cooldown |
 | **`cooldown_sec`** | `1` … `120` | Sleep when a crash-loop is detected |
 
@@ -111,7 +111,7 @@ cooldown_sec=8
 | Stage | Behaviour |
 |-------|-----------|
 | **Startup** | `prepare_files()` → `load_config()` → log file → **`/dev/tty`** on fds **0–2** |
-| **Spawn** | `fork` + `execve` of **cactsole** or **cactsole-rescue** with **`PATH=/bin:/sbin`**, **`HOME=/`** |
+| **Spawn** | `fork` + `execve` of **cactsole** or **cactsole-rescue** with **`PATH=/usr/bin:/usr/sbin`**, **`HOME=/`** |
 | **Wait** | `waitpid`; the wait status is **POSIX-packed** — the child's exit code is in bits **8–15** (`(status >> 8) & 0xff`) |
 | **Clean exit** (`0`) | Resets fast-crash counter; with **`on-failure`**, supervisor **exits** |
 | **Crash-loop** | If the child dies quickly **too many times**, sleep **`cooldown_sec`**, then prefer **rescue** on the next iteration when enabled |
