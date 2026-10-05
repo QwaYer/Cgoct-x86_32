@@ -25,8 +25,8 @@
 | **Load address** | PIE **ET_DYN** at **`0x08000000`** — same layout family as **cactsole** ([`link.ld`](link.ld)) |
 | **libc** | Dynamic **`clibc.so`** from **[CactLib-x86_32](https://github.com/QwaYer/CactLibc-x86_32)** at **`0x10000000`** (see CactLib linker notes) |
 | **Fast-crash window** | Child exit **≤ 3 s** with **non-zero** status counts toward burst detection |
-| **Restart backoff** | On **fork/exec** failure: exponential delay **1 … 10 s** |
-| **Config buffer** | **512** bytes max read from `/etc/cgoct.conf` |
+| **Restart backoff** | On **fork/exec** failure: increasing delay **1 … 10 s** |
+| **Config buffer** | **1024** bytes max read from `/etc/cgoct.conf` |
 
 ---
 
@@ -92,6 +92,7 @@ On first boot, if **`/etc/cgoct.conf`** is missing and the path is writable, **c
 | **`rescue_shell`** | `0` · `1` | After a crash-loop cooldown, try **`/usr/bin/cactsole-rescue`** if present |
 | **`crash_limit`** | `1` … `20` | Fast crashes within the window before cooldown |
 | **`cooldown_sec`** | `1` … `120` | Sleep when a crash-loop is detected |
+| **`services`** | space/comma/tab list | Daemons from **`/usr/sbin`** to start before the shell (empty by default) |
 
 Lines starting with **`#`** are ignored. Unknown keys are skipped.
 
