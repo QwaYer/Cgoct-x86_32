@@ -31,7 +31,9 @@ static const char default_config[] =
 
 static char *cactsole_argv[] = { "cactsole", NULL };
 static char *rescue_argv[]   = { "cactsole-rescue", "--safe-mode", NULL };
-static char *cactsole_envp[] = { "PATH=/usr/bin:/usr/sbin", "HOME=/", NULL };
+/* /usr/local/{sbin,bin} first: cactpkg installs packages there, so they shadow
+ * the image's /usr/bin and /usr/sbin. */
+static char *cactsole_envp[] = { "PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin", "HOME=/", NULL };
 static int log_fd = -1;
 
 /* Supervisor tuning to avoid fast crash loops. */
