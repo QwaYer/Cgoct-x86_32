@@ -21,6 +21,9 @@ static const char default_config[] =
     "# rescue_shell   : 0 | 1   (try /usr/bin/cactsole-rescue on crash-loop)\n"
     "# crash_limit    : 1..20   (fast-crash bursts before cooldown)\n"
     "# cooldown_sec   : 1..120  (pause after crash-loop)\n"
+    "# localrepo_free : 0 | 1   (1 = release the /tmp localrepo copy once the\n"
+    "#                  configured daemons have been running for a few seconds;\n"
+    "#                  keep 0 while firmware is extracted on request)\n"
     "# services       : opt-in — daemons from /usr/sbin to start before shell.\n"
     "#                  Empty by default; the user (a utility) chooses the list.\n"
     "restart_policy=always\n"
@@ -57,6 +60,7 @@ struct supervisor_cfg {
     int use_rescue_shell;
     int crash_limit;
     int cooldown_sec;
+    int localrepo_free;
 };
 
 /* ── Tracked background daemons (/sbin/<name>) ───────────────────────── */
@@ -102,6 +106,128 @@ static int write_all(int fd, const char *data, int len) {
         total += n;
     }
     return 0;
+}
+
+/* ── localrepo archive ───────────────────────────────────────────────────
+ *
+ * localrepo.tar.zst (firmware, the installer's media payload and the offline
+ * cactpkg repository) is far too big for the initfs image, so it lives on the
+ * boot medium.  Put a copy in tmpfs at boot so firmextr streams members out of
+ * it on demand, and release that copy once the daemons (the drivers) have been
+ * up for a while — after that the tmpfs copy is dead weight.
+ *
+ * Knob: localrepo_free=0 in /etc/cgoct.conf keeps the copy instead.
+ */
+#define LOCALREPO_TMP            "/tmp/localrepo.tar.zst"
+#define LOCALREPO_COPYBUF        (64 * 1024)
+#define LOCALREPO_FREE_AFTER_MS  5000L
+
+static const char *localrepo_sources[] = {
+    "/dev/localrepo",             /* GRUB loaded it as the "localrepo" module */
+    "/localrepo.tar.zst",
+    "/boot/localrepo.tar.zst",
+    "/usr/lib/localrepo.tar.zst",
+    NULL
+};
+
+static void log_text(const char *s);   /* defined below */
+
+/* A source that reports nothing to read is not an archive: an empty
+ * /dev/localrepo (a boot medium whose GRUB did not hand the module over, or
+ * handed over a zero-byte one) or a zero-length file.  Copying it would leave
+ * a zero-byte /tmp copy behind for firmextr to trip over, so it is skipped.
+ * /dev/localrepo publishes the module size, so an absent module shows up here
+ * as size 0; sources that cannot report a size (pipes) are left alone. */
+static int source_has_data(const char *path) {
+    struct stat st;
+    if (stat(path, &st) != 0) return 0;
+    if (S_ISREG(st.st_mode) || S_ISCHR(st.st_mode)) return st.st_size > 0;
+    return 1;
+}
+
+/* Copy the archive at `src` into tmpfs.  Returns the number of bytes copied —
+ * 0 when the source yields nothing (e.g. /dev/localrepo on a boot medium that
+ * carried no localrepo module) — or -1 on failure. */
+static long copy_localrepo(const char *src) {
+    char *buf = malloc(LOCALREPO_COPYBUF);
+    if (!buf) return -1;
+
+    int in = open(src, O_RDONLY);
+    if (in < 0) { free(buf); return -1; }
+
+    int out = open(LOCALREPO_TMP, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (out < 0) { close(in); free(buf); return -1; }
+
+    long total = 0;
+    for (;;) {
+        int n = (int)read(in, buf, LOCALREPO_COPYBUF);
+        if (n < 0) { total = -1; break; }
+        if (n == 0) break;
+        if (write_all(out, buf, n) != 0) { total = -1; break; }
+        total += n;
+    }
+
+    close(out);
+    close(in);
+    free(buf);
+    return total;
+}
+
+static void stage_localrepo(void) {
+    int i;
+    const char *empty = NULL;   /* a source that exists but carries nothing */
+
+    /* Already staged (or put there by hand)?  A zero-byte leftover is not an
+     * archive, so it does not count as staged. */
+    if (source_has_data(LOCALREPO_TMP)) return;
+
+    for (i = 0; localrepo_sources[i]; i++) {
+        if (!file_exists(localrepo_sources[i])) continue;
+        if (!source_has_data(localrepo_sources[i])) {
+            empty = localrepo_sources[i];
+            continue;
+        }
+
+        long n = copy_localrepo(localrepo_sources[i]);
+        if (n > 0) {
+            printf("cgoct: localrepo staged -> %s (%ld bytes)\n",
+                   LOCALREPO_TMP, n);
+            log_text("cgoct: localrepo staged in tmpfs\n");
+            return;
+        }
+        /* Never leave a partial (or empty) archive behind: the next source
+         * would be skipped, and firmextr would blame the file's contents. */
+        unlink(LOCALREPO_TMP);
+        printf("cgoct: localrepo copy failed: %s\n", localrepo_sources[i]);
+        log_text("cgoct: localrepo copy failed\n");
+    }
+
+    if (empty)
+        printf("cgoct: localrepo source is empty (no archive?): %s\n", empty);
+    printf("cgoct: no localrepo archive source found\n");
+    log_text("cgoct: no localrepo archive source\n");
+}
+
+/* Release the tmpfs copy once every configured service has been running for
+ * LOCALREPO_FREE_AFTER_MS.  With no services configured the copy stays (there
+ * were no drivers to feed, so it may still be needed). */
+static void maybe_free_localrepo(struct supervisor_cfg *cfg, int *freed,
+                                 long *all_up_ms, long now) {
+    int i;
+
+    if (*freed || !cfg->localrepo_free || services_n == 0) return;
+
+    for (i = 0; i < services_n; i++) {
+        if (services[i].pid <= 0) { *all_up_ms = 0; return; }
+    }
+    if (*all_up_ms == 0) { *all_up_ms = now; return; }
+    if (now - *all_up_ms < LOCALREPO_FREE_AFTER_MS) return;
+
+    if (unlink(LOCALREPO_TMP) == 0) {
+        printf("cgoct: localrepo released (%s removed)\n", LOCALREPO_TMP);
+        log_text("cgoct: localrepo released from tmpfs\n");
+    }
+    *freed = 1;
 }
 
 static void prepare_files(void) {
@@ -159,6 +285,10 @@ static void cfg_defaults(struct supervisor_cfg *cfg) {
     cfg->use_rescue_shell = 1;
     cfg->crash_limit = FAST_CRASH_LIMIT;
     cfg->cooldown_sec = COOLDOWN_SEC;
+    /* Firmware is pulled out of the archive on request (firmextr), so the tmpfs
+     * copy is kept by default; set localrepo_free=1 once the firmware a boot
+     * needs is extracted up front. */
+    cfg->localrepo_free = 0;
 }
 
 /* ── Default daemon list ─────────────────────────────────────────────── */
@@ -259,6 +389,8 @@ static void parse_config_line(struct supervisor_cfg *cfg, char *line) {
         /* Full replacement of the default list. */
         services_n = 0;
         parse_service_names(value);
+    } else if (strcmp(key, "localrepo_free") == 0) {
+        cfg->localrepo_free = atoi(value) ? 1 : 0;
     }
 }
 
@@ -334,6 +466,8 @@ int main(void) {
     int   fast_crash_count = 0;
     int   restart_delay = RESTART_DELAY_MIN_SEC;
     int   try_rescue_next = 0;
+    int   localrepo_freed = 0;
+    long  localrepo_all_up_ms = 0;
 
     prepare_files();
     services_defaults();
@@ -356,6 +490,10 @@ int main(void) {
         printf("\n");
     }
     log_text("cgoct: supervisor online\n");
+
+    /* Bring the localrepo archive into tmpfs before the daemons/drivers want
+     * firmware out of it. */
+    stage_localrepo();
 
     while (1) {
         now = now_ms();
@@ -392,6 +530,10 @@ int main(void) {
                 }
             }
         }
+
+        /* Release the localrepo tmpfs copy once the daemons have been up for a
+         * while (they read firmware while coming up). */
+        maybe_free_localrepo(&cfg, &localrepo_freed, &localrepo_all_up_ms, now);
 
         /* ── 2. Start the shell if it is time ── */
         if (shell_pid <= 0 && now >= shell_next_start) {
